@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../middleware/cors.php';
 require_once __DIR__ . '/../../middleware/auth.php';
+require_once __DIR__ . '/../../middleware/plan.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     api_error('Method not allowed.', 405);
