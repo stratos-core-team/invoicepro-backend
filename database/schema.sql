@@ -118,7 +118,12 @@ CREATE TABLE subscriptions (
   user_id INT UNSIGNED NOT NULL,
   plan ENUM('free','pro') NOT NULL DEFAULT 'free',
   billing_cycle ENUM('monthly','yearly') NULL,
-  status ENUM('active','cancelled','expired') NOT NULL DEFAULT 'active',
+  status ENUM(
+    'pending',
+    'active',
+    'cancelled',
+    'expired'
+) NOT NULL DEFAULT 'pending',
   starts_at DATETIME NULL,
   expires_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
