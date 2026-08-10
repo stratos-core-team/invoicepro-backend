@@ -59,6 +59,7 @@ CREATE TABLE invoices (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE RESTRICT
+  recurring_invoice_id BIGINT UNSIGNED NULL,
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE invoice_items (
@@ -160,7 +161,10 @@ CREATE TABLE recurring_invoice_items (
     quantity DECIMAL(12,2) NOT NULL DEFAULT 1,
     unit_price DECIMAL(14,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
+CONSTRAINT fk_invoice_recurring
+    FOREIGN KEY (recurring_invoice_id)
+    REFERENCES recurring_invoices(id)
+    ON DELETE SET NULL
     CONSTRAINT fk_recurring_item
         FOREIGN KEY (recurring_invoice_id)
         REFERENCES recurring_invoices(id)
