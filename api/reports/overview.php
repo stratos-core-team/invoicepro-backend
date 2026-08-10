@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $user = require_auth_user();
+require_plan($user, 'pro');
 $db = db();
 
 $userId = (int)$user['id'];
