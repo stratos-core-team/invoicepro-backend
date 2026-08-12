@@ -4,11 +4,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../middleware/cors.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../core/response.php';
+require_once __DIR__ . '/../../core/request.php';
 require_once __DIR__ . '/../../services/MailService.php';
 
 /*
 |--------------------------------------------------------------------------
-| Request Method
+| Method
 |--------------------------------------------------------------------------
 */
 
@@ -20,7 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $db = db();
-
 $input = request_json();
 
 /*
@@ -29,8 +29,12 @@ $input = request_json();
 |--------------------------------------------------------------------------
 */
 
-$name = trim(
-    (string)($input['name'] ?? '')
+$fullName = trim(
+    (string)($input['full_name'] ?? '')
+);
+
+$businessName = trim(
+    (string)($input['business_name'] ?? '')
 );
 
 $email = strtolower(
@@ -56,14 +60,30 @@ $passwordConfirmation =
 
 $errors = [];
 
-if ($name === '') {
-    $errors['name'] =
-        'Name is required.';
+if ($fullName === '') {
+
+    $errors['full_name'] =
+        'Full name is required.';
+
+} elseif (
+    mb_strlen($fullName) > 120
+) {
+
+    $errors['full_name'] =
+        'Full name must not exceed 120 characters.';
 }
 
-if (mb_strlen($name) > 120) {
-    $errors['name'] =
-        'Name must not exceed 120 characters.';
+if ($businessName === '') {
+
+    $errors['business_name'] =
+        'Business name is required.';
+
+} elseif (
+    mb_strlen($businessName) > 160
+) {
+
+    $errors['business_name'] =
+        'Business name must not exceed 160 characters.';
 }
 
 if ($email === '') {
@@ -87,7 +107,9 @@ if ($password === '') {
     $errors['password'] =
         'Password is required.';
 
-} elseif (strlen($password) < 8) {
+} elseif (
+    strlen($password) < 8
+) {
 
     $errors['password'] =
         'Password must contain at least 8 characters.';
@@ -113,7 +135,7 @@ if ($errors) {
 
 /*
 |--------------------------------------------------------------------------
-| Check existing email
+| Existing Email
 |--------------------------------------------------------------------------
 */
 
@@ -136,9 +158,10 @@ $stmt->bind_param(
 
 $stmt->execute();
 
-$existingUser = $stmt
-    ->get_result()
-    ->fetch_assoc();
+$existingUser =
+    $stmt
+        ->get_result()
+        ->fetch_assoc();
 
 if ($existingUser) {
 
@@ -171,10 +194,6 @@ if ($passwordHash === false) {
 |--------------------------------------------------------------------------
 | Email Verification Token
 |--------------------------------------------------------------------------
-|
-| Token halisi ndiyo itatumwa kwa email.
-| Database itahifadhi SHA-256 hash tu.
-|--------------------------------------------------------------------------
 */
 
 try {
@@ -206,15 +225,19 @@ $verificationExpiresAt =
 
 /*
 |--------------------------------------------------------------------------
-| Default Plan
+| Defaults
 |--------------------------------------------------------------------------
 */
 
-$defaultPlan = 'free';
+$defaultPlan =
+    'free';
+
+$defaultStatus =
+    'active';
 
 /*
 |--------------------------------------------------------------------------
-| Create User
+| Transaction
 |--------------------------------------------------------------------------
 */
 
@@ -222,23 +245,33 @@ $db->begin_transaction();
 
 try {
 
+    /*
+    |--------------------------------------------------------------------------
+    | Create user
+    |--------------------------------------------------------------------------
+    */
+
     $stmt = $db->prepare("
         INSERT INTO users
         (
-            name,
+            full_name,
+            business_name,
             email,
             email_verified_at,
             email_verification_token,
             email_verification_expires_at,
             password_hash,
-            plan
+            plan,
+            status
         )
 
         VALUES
         (
             ?,
             ?,
+            ?,
             NULL,
+            ?,
             ?,
             ?,
             ?,
@@ -247,13 +280,15 @@ try {
     ");
 
     $stmt->bind_param(
-        'ssssss',
-        $name,
+        'ssssssss',
+        $fullName,
+        $businessName,
         $email,
         $verificationTokenHash,
         $verificationExpiresAt,
         $passwordHash,
-        $defaultPlan
+        $defaultPlan,
+        $defaultStatus
     );
 
     $stmt->execute();
@@ -263,10 +298,33 @@ try {
 
     /*
     |--------------------------------------------------------------------------
-    | Create default free subscription
+    | Create business profile
     |--------------------------------------------------------------------------
-    |
-    | User starts on Free plan.
+    */
+
+    $businessStmt = $db->prepare("
+        INSERT INTO business_profiles
+        (
+            user_id,
+            business_name,
+            email
+        )
+
+        VALUES (?, ?, ?)
+    ");
+
+    $businessStmt->bind_param(
+        'iss',
+        $userId,
+        $businessName,
+        $email
+    );
+
+    $businessStmt->execute();
+
+    /*
+    |--------------------------------------------------------------------------
+    | Create Free subscription
     |--------------------------------------------------------------------------
     */
 
@@ -305,12 +363,6 @@ try {
 
     $db->rollback();
 
-    /*
-    |--------------------------------------------------------------------------
-    | Duplicate email race-condition protection
-    |--------------------------------------------------------------------------
-    */
-
     if ((int)$e->getCode() === 1062) {
 
         api_error(
@@ -338,10 +390,6 @@ try {
 |--------------------------------------------------------------------------
 | Send Verification Email
 |--------------------------------------------------------------------------
-|
-| Account creation should not be rolled back simply because the email
-| provider is temporarily unavailable.
-|--------------------------------------------------------------------------
 */
 
 $emailSent = false;
@@ -354,17 +402,11 @@ try {
     $emailSent =
         $mailer->sendVerificationEmail(
             $email,
-            $name,
+            $fullName,
             $verificationToken
         );
 
 } catch (Throwable $e) {
-
-    /*
-    |--------------------------------------------------------------------------
-    | Do not expose mail server errors to client.
-    |--------------------------------------------------------------------------
-    */
 
     $emailSent = false;
 
@@ -380,14 +422,6 @@ try {
 |--------------------------------------------------------------------------
 | Response
 |--------------------------------------------------------------------------
-|
-| Do NOT return:
-|
-| - password
-| - password_hash
-| - verification token
-| - verification token hash
-|--------------------------------------------------------------------------
 */
 
 api_success(
@@ -396,14 +430,20 @@ api_success(
             'id' =>
                 $userId,
 
-            'name' =>
-                $name,
+            'full_name' =>
+                $fullName,
+
+            'business_name' =>
+                $businessName,
 
             'email' =>
                 $email,
 
             'plan' =>
                 $defaultPlan,
+
+            'status' =>
+                $defaultStatus,
 
             'email_verified' =>
                 false
@@ -420,8 +460,10 @@ api_success(
                 86400
         ]
     ],
+
     $emailSent
         ? 'Account created successfully. Please check your email to verify your account.'
         : 'Account created successfully, but the verification email could not be sent. Please request a new verification email.',
+
     201
 );
