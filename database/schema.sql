@@ -5,6 +5,8 @@ CREATE TABLE users (
   email VARCHAR(190) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   token_version INT UNSIGNED NOT NULL DEFAULT 1,
+  two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
+two_factor_secret VARCHAR(255) NULL,
   plan ENUM('free','pro') NOT NULL DEFAULT 'free',
   status ENUM('active','suspended') NOT NULL DEFAULT 'active',
   email_verified_at DATETIME NULL,
