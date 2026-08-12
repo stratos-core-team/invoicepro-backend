@@ -68,7 +68,6 @@ if ($password === '') {
 }
 
 if ($errors) {
-
     api_error(
         'Validation failed.',
         422,
@@ -90,6 +89,7 @@ $stmt = $db->prepare("
         email,
         email_verified_at,
         password_hash,
+        token_version,
         plan,
         status
 
@@ -114,9 +114,6 @@ $user = $stmt
 /*
 |--------------------------------------------------------------------------
 | Verify Credentials
-|--------------------------------------------------------------------------
-|
-| Keep the same response whether email or password is wrong.
 |--------------------------------------------------------------------------
 */
 
@@ -171,12 +168,7 @@ if (empty($user['email_verified_at'])) {
 
 /*
 |--------------------------------------------------------------------------
-| Subscription Expiry Safety Check
-|--------------------------------------------------------------------------
-|
-| Cron handles normal expiry, but login also checks the current user's
-| subscription so an expired Pro account does not keep Pro access merely
-| because cron has not run yet.
+| Validate Pro Subscription
 |--------------------------------------------------------------------------
 */
 
@@ -226,7 +218,7 @@ if ($user['plan'] === 'pro') {
 
     /*
     |--------------------------------------------------------------------------
-    | Downgrade stale Pro flag
+    | Downgrade stale Pro account
     |--------------------------------------------------------------------------
     */
 
@@ -251,7 +243,10 @@ if ($user['plan'] === 'pro') {
 
 /*
 |--------------------------------------------------------------------------
-| JWT
+| Generate JWT
+|--------------------------------------------------------------------------
+|
+| token_version inaingia kama "ver".
 |--------------------------------------------------------------------------
 */
 
@@ -261,22 +256,25 @@ $token = jwt_encode([
 
     'email' =>
         $user['email'],
-   'ver' => (int)$user['token_version']                 
+
+    'ver' =>
+        (int)$user['token_version']
 ]);
 
 /*
 |--------------------------------------------------------------------------
-| Remove sensitive information
+| Remove Sensitive Values
 |--------------------------------------------------------------------------
 */
 
 unset(
-    $user['password_hash']
+    $user['password_hash'],
+    $user['token_version']
 );
 
 /*
 |--------------------------------------------------------------------------
-| Normalize
+| Normalize Response
 |--------------------------------------------------------------------------
 */
 
@@ -294,7 +292,7 @@ unset(
 
 /*
 |--------------------------------------------------------------------------
-| Response
+| Success
 |--------------------------------------------------------------------------
 */
 
