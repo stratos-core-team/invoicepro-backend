@@ -516,7 +516,7 @@ CREATE TABLE subscription_payments (
 
     subscription_id BIGINT UNSIGNED NULL,
 
-    reference VARCHAR(120) NULL,
+    reference VARCHAR(120) NOT NULL,
 
     provider VARCHAR(50) NULL,
 
@@ -526,13 +526,14 @@ CREATE TABLE subscription_payments (
         NOT NULL DEFAULT 0,
 
     currency VARCHAR(10)
-        NOT NULL DEFAULT 'TZS',
+        NOT NULL DEFAULT 'NGN',
 
     status ENUM(
-        'pending',
-        'successful',
-        'failed'
-    ) NOT NULL DEFAULT 'pending',
+    'pending',
+    'successful',
+    'failed',
+    'cancelled'
+) NOT NULL DEFAULT 'pending',
 
     paid_at DATETIME NULL,
 
@@ -550,7 +551,9 @@ CREATE TABLE subscription_payments (
     INDEX idx_subscription_payment_status (
         status
     ),
-
+UNIQUE KEY uq_subscription_payment_reference (
+    reference
+),
     CONSTRAINT fk_subscription_payment_user
         FOREIGN KEY (user_id)
         REFERENCES users(id)
