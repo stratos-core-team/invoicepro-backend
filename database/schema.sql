@@ -4,6 +4,7 @@ CREATE TABLE users (
   business_name VARCHAR(160) NOT NULL,
   email VARCHAR(190) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
+  token_version,
   plan ENUM('free','pro') NOT NULL DEFAULT 'free',
   status ENUM('active','suspended') NOT NULL DEFAULT 'active',
   email_verified_at DATETIME NULL,
