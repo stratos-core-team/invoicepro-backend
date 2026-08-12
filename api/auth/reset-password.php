@@ -6,8 +6,17 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../core/response.php';
 require_once __DIR__ . '/../../core/request.php';
 
+/*
+|--------------------------------------------------------------------------
+| Method
+|--------------------------------------------------------------------------
+*/
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    api_error('Method not allowed.', 405);
+    api_error(
+        'Method not allowed.',
+        405
+    );
 }
 
 $db = db();
@@ -28,8 +37,7 @@ $password =
 
 $passwordConfirmation =
     (string)(
-        $input['password_confirmation']
-        ?? ''
+        $input['password_confirmation'] ?? ''
     );
 
 /*
@@ -41,7 +49,6 @@ $passwordConfirmation =
 $errors = [];
 
 if ($token === '') {
-
     $errors['token'] =
         'Password reset token is required.';
 }
@@ -79,7 +86,11 @@ if ($errors) {
 
 /*
 |--------------------------------------------------------------------------
-| Hash supplied token
+| Hash supplied reset token
+|--------------------------------------------------------------------------
+|
+| Token halisi haijahifadhiwa database.
+| Database ina SHA-256 hash yake.
 |--------------------------------------------------------------------------
 */
 
@@ -91,7 +102,7 @@ $tokenHash =
 
 /*
 |--------------------------------------------------------------------------
-| Find reset request
+| Find user by reset token
 |--------------------------------------------------------------------------
 */
 
@@ -120,6 +131,12 @@ $user = $stmt
     ->get_result()
     ->fetch_assoc();
 
+/*
+|--------------------------------------------------------------------------
+| Invalid Token
+|--------------------------------------------------------------------------
+*/
+
 if (!$user) {
 
     api_error(
@@ -133,7 +150,7 @@ if (!$user) {
 
 /*
 |--------------------------------------------------------------------------
-| Account status
+| Account Status
 |--------------------------------------------------------------------------
 */
 
@@ -150,7 +167,7 @@ if ($user['status'] !== 'active') {
 
 /*
 |--------------------------------------------------------------------------
-| Check token expiry
+| Check Token Expiration
 |--------------------------------------------------------------------------
 */
 
@@ -163,7 +180,7 @@ if (
 
     /*
     |--------------------------------------------------------------------------
-    | Remove expired token
+    | Delete expired reset token
     |--------------------------------------------------------------------------
     */
 
@@ -195,7 +212,7 @@ if (
 
 /*
 |--------------------------------------------------------------------------
-| Create password hash
+| Generate New Password Hash
 |--------------------------------------------------------------------------
 */
 
@@ -215,10 +232,17 @@ if ($passwordHash === false) {
 
 /*
 |--------------------------------------------------------------------------
-| Update password
+| Update Password
 |--------------------------------------------------------------------------
 |
-| Token is cleared immediately, making it single-use.
+| Hapa tunafanya mambo manne:
+|
+| 1. Tunabadilisha password.
+| 2. Tunaongeza token_version.
+| 3. Tunafuta reset token.
+| 4. Tunafuta expiry ya reset token.
+|
+| Kuongeza token_version kunafanya JWT zote za zamani kuwa invalid.
 |--------------------------------------------------------------------------
 */
 
@@ -231,6 +255,7 @@ try {
 
         SET
             password_hash = ?,
+            token_version = token_version + 1,
             password_reset_token = NULL,
             password_reset_expires_at = NULL
 
@@ -247,6 +272,12 @@ try {
 
     $update->execute();
 
+    /*
+    |--------------------------------------------------------------------------
+    | Make sure token was consumed successfully
+    |--------------------------------------------------------------------------
+    */
+
     if ($update->affected_rows !== 1) {
 
         throw new RuntimeException(
@@ -260,6 +291,13 @@ try {
 
     $db->rollback();
 
+    error_log(
+        'Password reset failed for user '
+        . $user['id']
+        . ': '
+        . $e->getMessage()
+    );
+
     api_error(
         'Could not reset password.',
         500
@@ -268,13 +306,14 @@ try {
 
 /*
 |--------------------------------------------------------------------------
-| Response
+| Success
 |--------------------------------------------------------------------------
 */
 
 api_success(
     [
-        'password_reset' => true
+        'password_reset' => true,
+        'sessions_revoked' => true
     ],
-    'Password reset successfully. You can now log in with your new password.'
+    'Password reset successfully. Please log in with your new password.'
 );
