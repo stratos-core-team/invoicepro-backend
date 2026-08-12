@@ -7,79 +7,31 @@ require_once __DIR__ . '/../../core/response.php';
 require_once __DIR__ . '/../../core/request.php';
 require_once __DIR__ . '/../../core/jwt.php';
 
-/*
-|--------------------------------------------------------------------------
-| Method
-|--------------------------------------------------------------------------
-*/
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    api_error(
-        'Method not allowed.',
-        405
-    );
+    api_error('Method not allowed.', 405);
 }
 
 $db = db();
 $input = request_json();
 
-/*
-|--------------------------------------------------------------------------
-| Input
-|--------------------------------------------------------------------------
-*/
-
-$email = strtolower(
-    trim(
-        (string)($input['email'] ?? '')
-    )
-);
-
-$password =
-    (string)($input['password'] ?? '');
-
-/*
-|--------------------------------------------------------------------------
-| Validation
-|--------------------------------------------------------------------------
-*/
+$email = strtolower(trim((string)($input['email'] ?? '')));
+$password = (string)($input['password'] ?? '');
 
 $errors = [];
 
 if ($email === '') {
-
-    $errors['email'] =
-        'Email is required.';
-
-} elseif (
-    !filter_var(
-        $email,
-        FILTER_VALIDATE_EMAIL
-    )
-) {
-
-    $errors['email'] =
-        'Please provide a valid email address.';
+    $errors['email'] = 'Email is required.';
+} elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors['email'] = 'Please provide a valid email address.';
 }
 
 if ($password === '') {
-    $errors['password'] =
-        'Password is required.';
+    $errors['password'] = 'Password is required.';
 }
 
 if ($errors) {
-    api_error(
-        'Validation failed.',
-        422,
-        $errors
-    );
+    api_error('Validation failed.', 422, $errors);
 }
-
-/*
-|--------------------------------------------------------------------------
-| Find User
-|--------------------------------------------------------------------------
-*/
 
 $stmt = $db->prepare("
     SELECT
@@ -91,71 +43,35 @@ $stmt = $db->prepare("
         password_hash,
         token_version,
         plan,
-        status
+        status,
+        two_factor_enabled
 
     FROM users
-
     WHERE email = ?
-
     LIMIT 1
 ");
 
-$stmt->bind_param(
-    's',
-    $email
-);
-
+$stmt->bind_param('s', $email);
 $stmt->execute();
 
-$user = $stmt
-    ->get_result()
-    ->fetch_assoc();
-
-/*
-|--------------------------------------------------------------------------
-| Verify Credentials
-|--------------------------------------------------------------------------
-*/
+$user = $stmt->get_result()->fetch_assoc();
 
 if (
-    !$user
-    || !password_verify(
-        $password,
-        $user['password_hash']
-    )
+    !$user ||
+    !password_verify($password, $user['password_hash'])
 ) {
-
-    api_error(
-        'Invalid email or password.',
-        401
-    );
+    api_error('Invalid email or password.', 401);
 }
 
-/*
-|--------------------------------------------------------------------------
-| Account Status
-|--------------------------------------------------------------------------
-*/
-
 if ($user['status'] !== 'active') {
-
     api_error(
         'Account inactive.',
         403,
-        [
-            'code' => 'ACCOUNT_INACTIVE'
-        ]
+        ['code' => 'ACCOUNT_INACTIVE']
     );
 }
 
-/*
-|--------------------------------------------------------------------------
-| Email Verification
-|--------------------------------------------------------------------------
-*/
-
 if (empty($user['email_verified_at'])) {
-
     api_error(
         'Please verify your email address before logging in.',
         403,
@@ -168,26 +84,19 @@ if (empty($user['email_verified_at'])) {
 
 /*
 |--------------------------------------------------------------------------
-| Validate Pro Subscription
+| Validate Pro subscription
 |--------------------------------------------------------------------------
 */
 
 if ($user['plan'] === 'pro') {
 
     $subscriptionStmt = $db->prepare("
-        SELECT
-            id,
-            status,
-            expires_at
-
+        SELECT id, status, expires_at
         FROM subscriptions
-
         WHERE user_id = ?
           AND plan = 'pro'
           AND status = 'active'
-
         ORDER BY id DESC
-
         LIMIT 1
     ");
 
@@ -205,22 +114,13 @@ if ($user['plan'] === 'pro') {
     $validPro = false;
 
     if ($subscription) {
-
         if (
-            empty($subscription['expires_at'])
-            || strtotime(
-                $subscription['expires_at']
-            ) > time()
+            empty($subscription['expires_at']) ||
+            strtotime($subscription['expires_at']) > time()
         ) {
             $validPro = true;
         }
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Downgrade stale Pro account
-    |--------------------------------------------------------------------------
-    */
 
     if (!$validPro) {
 
@@ -243,66 +143,57 @@ if ($user['plan'] === 'pro') {
 
 /*
 |--------------------------------------------------------------------------
-| Generate JWT
+| 2FA Challenge
 |--------------------------------------------------------------------------
-|
-| token_version inaingia kama "ver".
+*/
+
+if ((int)$user['two_factor_enabled'] === 1) {
+
+    $challengeToken = jwt_encode([
+        'sub' => (int)$user['id'],
+        'email' => $user['email'],
+        'ver' => (int)$user['token_version'],
+        'purpose' => '2fa_challenge',
+        'exp' => time() + 300
+    ]);
+
+    api_success(
+        [
+            'two_factor_required' => true,
+            'challenge_token' => $challengeToken,
+            'expires_in' => 300
+        ],
+        'Two-factor authentication required.'
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Normal JWT
 |--------------------------------------------------------------------------
 */
 
 $token = jwt_encode([
-    'sub' =>
-        (int)$user['id'],
-
-    'email' =>
-        $user['email'],
-
-    'ver' =>
-        (int)$user['token_version']
+    'sub' => (int)$user['id'],
+    'email' => $user['email'],
+    'ver' => (int)$user['token_version']
 ]);
-
-/*
-|--------------------------------------------------------------------------
-| Remove Sensitive Values
-|--------------------------------------------------------------------------
-*/
 
 unset(
     $user['password_hash'],
-    $user['token_version']
-);
-
-/*
-|--------------------------------------------------------------------------
-| Normalize Response
-|--------------------------------------------------------------------------
-*/
-
-$user['id'] =
-    (int)$user['id'];
-
-$user['email_verified'] =
-    !empty(
-        $user['email_verified_at']
-    );
-
-unset(
+    $user['token_version'],
     $user['email_verified_at']
 );
 
-/*
-|--------------------------------------------------------------------------
-| Success
-|--------------------------------------------------------------------------
-*/
+$user['id'] = (int)$user['id'];
+$user['two_factor_enabled'] =
+    (bool)$user['two_factor_enabled'];
 
 api_success(
     [
-        'token' =>
-            $token,
-
-        'user' =>
-            $user
+        'two_factor_required' => false,
+        'token' => $token,
+        'user' => $user
     ],
     'Login successful.'
 );
