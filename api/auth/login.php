@@ -261,6 +261,7 @@ $token = jwt_encode([
 
     'email' =>
         $user['email']
+   'ver' => (int)$user['token_version']                 
 ]);
 
 /*
