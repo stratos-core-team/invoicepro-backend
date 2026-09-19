@@ -1,2 +1,0 @@
-ALTER TABLE users
-ADD COLUMN token_version INT UNSIGNED NOT NULL DEFAULT 1 AFTER password_hash;

@@ -1,8 +1,0 @@
-ALTER TABLE users
-ADD COLUMN email_verification_token VARCHAR(64) NULL
-    AFTER email_verified_at,
-ADD COLUMN email_verification_expires_at DATETIME NULL
-    AFTER email_verification_token;
-
-CREATE UNIQUE INDEX uq_users_email_verification_token
-ON users(email_verification_token);
