@@ -10,8 +10,6 @@ const router = Router();
  * Example (uncomment as each module is implemented):
  *
  *   router.use('/users', require('./users.routes'));
- *   router.use('/customers', require('./customers.routes'));
- *   router.use('/invoices', require('./invoices.routes'));
  *   router.use('/payments', require('./payments.routes'));       // includes Payscribe webhook
  *   router.use('/recurring-schedules', require('./recurringSchedules.routes'));
  *   router.use('/expenses', require('./expenses.routes'));
@@ -29,6 +27,7 @@ const router = Router();
 
 router.use('/auth', require('./auth.routes'));
 router.use('/customers', require('./customers.routes'));
+router.use('/invoices', require('./invoices.routes'));
 
 router.get('/', (req, res) => {
   res.json({ success: true, data: { message: 'InvoicePro NG API v1' } });
