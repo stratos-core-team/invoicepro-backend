@@ -28,6 +28,7 @@ const router = Router();
 router.use('/auth', require('./auth.routes'));
 router.use('/customers', require('./customers.routes'));
 router.use('/invoices', require('./invoices.routes'));
+router.use('/dashboard', require('./dashboard.routes'));
 
 router.get('/', (req, res) => {
   res.json({ success: true, data: { message: 'InvoicePro NG API v1' } });
