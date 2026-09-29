@@ -3,6 +3,7 @@ const invoicesRepo = require('../repositories/invoices.repository');
 const customersRepo = require('../repositories/customers.repository');
 const usersRepo = require('../repositories/users.repository');
 const emailService = require('./email.service');
+const invoicePdfService = require('./invoicePdf.service');
 
 const DEFAULT_DUE_DAYS = 14; // per PRD: "default payment due date of 14 days"
 const EDITABLE_STATUSES = ['draft'];
@@ -169,6 +170,14 @@ async function deleteInvoice(userId, id) {
   await invoicesRepo.remove(id, userId);
 }
 
+/**
+ * Emails the invoice PDF to the customer and flips draft -> sent.
+ *
+ * Order matters: the PDF is generated and the email is sent *before* the
+ * status is updated. If the email send fails, the invoice stays "draft" and
+ * the caller gets a clear error to retry — rather than an invoice marked
+ * "sent" that the customer never actually received.
+ */
 async function markAsSent(userId, id) {
   const existing = await invoicesRepo.findByIdForUser(id, userId);
   if (!existing) throw AppError.notFound('Invoice not found');
@@ -179,25 +188,38 @@ async function markAsSent(userId, id) {
     throw AppError.badRequest('This customer has no email address on file');
   }
 
+  const user = await usersRepo.findById(userId);
+  const { buffer, filename } = await invoicePdfService.buildInvoicePdf({ invoice: existing, user });
+
+  try {
+    await emailService.send({
+      to: existing.customer_email,
+      subject: `Invoice ${existing.invoice_number} from ${user.business_name}`,
+      html: `<p>Hi ${existing.customer_name},</p><p>You have a new invoice (${existing.invoice_number}) for ${existing.currency} ${existing.total_amount}, due ${existing.due_date}. It's attached as a PDF.</p>`,
+      replyTo: user.email, // client replies go to the freelancer, not to InvoicePro NG
+      fromName: user.business_name,
+      attachments: [{ filename, content: buffer }],
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`Failed to email invoice ${existing.invoice_number}:`, err.message);
+    throw new AppError(
+      502,
+      'Could not send the invoice email. The invoice was left as a draft — please try again.'
+    );
+  }
+
   const updated = await invoicesRepo.updateStatus(id, userId, {
     status: 'sent',
     sentAt: new Date(),
   });
 
-  // Fire-and-forget, same pattern as the registration confirmation email —
-  // don't fail the request if the email provider hiccups.
-  emailService
-    .send({
-      to: existing.customer_email,
-      subject: `Invoice ${existing.invoice_number}`,
-      html: `<p>You have a new invoice (${existing.invoice_number}) for ${existing.currency} ${existing.total_amount}, due ${existing.due_date}.</p>`,
-    })
-    .catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to send invoice email:', err.message);
-    });
-
-  return toPublicInvoice({ ...updated, items: existing.items, customer_name: existing.customer_name, customer_email: existing.customer_email });
+  return toPublicInvoice({
+    ...updated,
+    items: existing.items,
+    customer_name: existing.customer_name,
+    customer_email: existing.customer_email,
+  });
 }
 
 /**
@@ -217,7 +239,12 @@ async function markAsPaid(userId, id) {
     paidAt: new Date(),
   });
 
-  return toPublicInvoice({ ...updated, items: existing.items, customer_name: existing.customer_name, customer_email: existing.customer_email });
+  return toPublicInvoice({
+    ...updated,
+    items: existing.items,
+    customer_name: existing.customer_name,
+    customer_email: existing.customer_email,
+  });
 }
 
 module.exports = {
